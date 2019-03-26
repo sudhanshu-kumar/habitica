@@ -88,7 +88,8 @@
               :clearButtonText='$t("clear")',
               :todayButton='!challengeAccessRequired',
               :todayButtonText='$t("today")',
-              :disabled-picker='challengeAccessRequired'
+              :disabled-picker='challengeAccessRequired',
+              :highlighted='calendarHighlights'
             )
         .option(v-if="task.type === 'daily'")
           .form-group
@@ -99,7 +100,8 @@
               :clearButton="false",
               :todayButton="!challengeAccessRequired",
               :todayButtonText="$t('today')",
-              :disabled-picker="challengeAccessRequired"
+              :disabled-picker="challengeAccessRequired",
+              :highlighted='calendarHighlights'
             )
         .option(v-if="task.type === 'daily'")
           .form-group
@@ -726,6 +728,7 @@ export default {
         con: 'constitution',
         per: 'perception',
       },
+      calendarHighlights: { dates: [new Date()]},
     };
   },
   mounted () {
