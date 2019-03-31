@@ -48,13 +48,18 @@ b-modal#send-gems(:title="title", :hide-footer="true", size='md', @hide='onHide(
       @click="sendGift()",
       :disabled="sendingInProgress"
     ) {{ $t("send") }}
-    .payments-column.mx-auto(v-else, :class="{'payments-disabled': !gift.subscription.key}")
-      button.purchase.btn.btn-primary.payment-button.payment-item(@click='showStripe({gift, uuid: userReceivingGems._id, receiverName})', :disabled="!gift.subscription.key") 
+    .payments-column.mx-auto(v-else, :class="{'payments-disabled': !gift.subscription.key && gift.gems.amount < 1}")
+      button.purchase.btn.btn-primary.payment-button.payment-item(@click='showStripe({gift, uuid: userReceivingGems._id, receiverName})', :disabled="!gift.subscription.key && gift.gems.amount < 1") 
         .svg-icon.credit-card-icon(v-html="icons.creditCardIcon")
         | {{ $t('card') }}
-      button.btn.payment-item.paypal-checkout.payment-button(@click="openPaypalGift({gift: gift, giftedTo: userReceivingGems._id, receiverName})", :disabled="!gift.subscription.key")
-        img(src='~assets/images/paypal-checkout.png', srcset="~assets/images/paypal-checkout@3x.png 3x ~assets/images/paypal-checkout@2x.png 2x", :alt="$t('paypal')")
-      amazon-button.payment-item.mb-0(:amazon-data="{type: 'single', gift, giftedTo: userReceivingGems._id, receiverName}")
+      button.btn.payment-item.paypal-checkout.payment-button(@click="openPaypalGift({gift: gift, giftedTo: userReceivingGems._id, receiverName})", :disabled="!gift.subscription.key && gift.gems.amount < 1")
+        | &nbsp;
+        img(src='~assets/images/paypal-checkout.png', :alt="$t('paypal')")
+        | &nbsp;
+      amazon-button.payment-item.mb-0(
+        :amazon-data="{type: 'single', gift, giftedTo: userReceivingGems._id, receiverName}",
+        :amazon-disabled="!gift.subscription.key && gift.gems.amount < 1",
+      )
 </template>
 
 <style lang="scss">

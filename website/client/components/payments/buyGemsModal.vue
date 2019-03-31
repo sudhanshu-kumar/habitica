@@ -45,11 +45,13 @@
         .row.text-center
           h2.mx-auto.text-payment {{ $t('choosePaymentMethod') }}
         .payments-column
-          button.purchase.btn.btn-primary.payment-button.payment-item(@click='showStripe()') 
+          button.purchase.btn.btn-primary.payment-button.payment-item(@click='showStripe({})') 
             .svg-icon.credit-card-icon(v-html="icons.creditCardIcon")
             | {{ $t('card') }}
           button.btn.payment-item.paypal-checkout.payment-button(@click="openPaypal(paypalCheckoutLink, 'gems')")
-            img(src='~assets/images/paypal-checkout.png', srcset="~assets/images/paypal-checkout@3x.png 3x ~assets/images/paypal-checkout@2x.png 2x", :alt="$t('paypal')")
+            | &nbsp;
+            img(src='~assets/images/paypal-checkout.png', :alt="$t('paypal')")
+            | &nbsp;
           amazon-button.payment-item(:amazon-data="{type: 'single'}")
         .row.text-center
           .svg-icon.mx-auto(v-html='icons.heart', style='"height: 24px; width: 24px;"')
@@ -129,7 +131,9 @@
               .svg-icon.credit-card-icon(v-html="icons.creditCardIcon")
               | {{ $t('card') }}
             button.btn.payment-item.paypal-checkout.payment-button(@click="openPaypal(paypalSubscriptionLink, 'subscription')")
-              img(src='~assets/images/paypal-checkout.png', srcset="~assets/images/paypal-checkout@3x.png 3x ~assets/images/paypal-checkout@2x.png 2x", :alt="$t('paypal')")
+              | &nbsp;
+              img(src='~assets/images/paypal-checkout.png', :alt="$t('paypal')")
+              | &nbsp;
             amazon-button.payment-item(:amazon-data="{type: 'subscription', subscription: subscriptionPlan}")
 
           .row.text-center
