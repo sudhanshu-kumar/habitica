@@ -123,7 +123,7 @@ describe('POST /tasks/:id/approve/:userId', () => {
     await member2.sync();
 
     expect(user.notifications.length).to.equal(1);
-    expect(member2.notifications.length).to.equal(0);
+    expect(member2.notifications.length).to.equal(1);
   });
 
   it('prevents double approval on a task', async () => {
