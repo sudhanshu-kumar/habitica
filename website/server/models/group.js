@@ -333,6 +333,95 @@ schema.statics.getGroups = async function getGroups (options = {}) {
   return groupsArray;
 };
 
+function _translateMessage (lang, info) {
+  let msg;
+  let foundText = '';
+  let spells = shared.content.spells;
+  let quests = shared.content.quests;
+
+  switch (info.type) {
+    case 'quest_start':
+      msg = `\`${shared.i18n.t('chatQuestStarted', {questName: questScrolls[info.quest].text(lang)}, lang)}\``;
+      break;
+
+    case 'boss_damage':
+      msg = `\`${shared.i18n.t('chatBossDamage', {username: info.user, bossName: questScrolls[info.quest].boss.name(lang), userDamage: info.userDamage, bossDamage: info.bossDamage}, lang)}\``;
+      break;
+
+    case 'boss_dont_attack':
+      msg = `\`${shared.i18n.t('chatBossDontAttack', {username: info.user, bossName: questScrolls[info.quest].boss.name(lang), userDamage: info.userDamage}, lang)}\``;
+      break;
+
+    case 'boss_rage':
+      msg = `\`${questScrolls[info.quest].boss.rage.effect(lang)}\``;
+      break;
+
+    case 'boss_defeated':
+      msg = `\`${shared.i18n.t('chatBossDefeated', {bossName: questScrolls[info.quest].boss.name(lang)}, lang)}\``;
+      break;
+
+    case 'user_found_items':
+      foundText = _.reduce(info.items, (m, v, k) => {
+        m.push(`${v} ${questScrolls[info.quest].collect[k].text(lang)}`);
+        return m;
+      }, []).join(', ');
+      msg = `\`${shared.i18n.t('chatFindItems', {username: info.user, items: foundText}, lang)}\``;
+      break;
+
+    case 'all_items_found':
+      msg = `\`${shared.i18n.t('chatItemQuestFinish', lang)}\``;
+      break;
+
+    case 'spell_cast_party':
+      msg = `\`${shared.i18n.t('chatCastSpellParty', {username: info.user, spell: spells[info.class][info.spell].text(lang)}, lang)}\``;
+      break;
+
+    case 'spell_cast_user':
+      msg = `\`${shared.i18n.t('chatCastSpellUser', {username: info.user, spell: spells[info.class][info.spell].text(lang), target: info.target}, lang)}\``;
+      break;
+
+    case 'quest_abort':
+      msg = `\`${shared.i18n.t('chatQuestAborted', {username: info.user, questName: questScrolls[info.quest].text(lang)}, lang)}\``;
+      break;
+
+    case 'tavern_quest_completed':
+      msg = `\`${quests[info.quest].completionChat(lang)}\``;
+      break;
+
+    case 'tavern_boss_rage_tired':
+      msg = `\`${shared.i18n.t('tavernBossTired', {rageName: quests[info.quest].boss.rage.title(lang), bossName: quests[info.quest].boss.name(lang)}, lang)}\``;
+      break;
+
+    case 'tavern_boss_rage':
+      msg = `\`${quests[info.quest].boss.rage[info.scene](lang)}\``;
+      break;
+
+    case 'tavern_boss_desperation':
+      msg = `\`${quests[info.quest].boss.desperation.text(lang)}\``;
+      break;
+
+    case 'claim_task':
+      msg = `${shared.i18n.t('userIsClamingTask', {username: info.user, task: info.task}, lang)}`;
+      break;
+  }
+
+  return msg;
+}
+
+function _translateSystemMessages (group, user) {
+  let lang = user.preferences.language;
+
+  group.chat.forEach((chat, i, chatArray) => {
+    if (!_.isEmpty(chat.info)) {
+      chatArray[i].text = _translateMessage(lang, chat.info);
+    }
+  });
+
+  return group;
+}
+
+schema.statics.translateSystemMessages = _translateSystemMessages;
+
 // When converting to json remove chat messages with more than 1 flag and remove all flags info
 // unless the user is an admin or said chat is posted by that user
 // Not putting into toJSON because there we can't access user
@@ -343,6 +432,8 @@ schema.statics.toJSONCleanChat = async function groupToJSONCleanChat (group, use
   if (group && group.chat) {
     await getGroupChat(group);
   }
+
+  group = _translateSystemMessages(group, user);
 
   let toJSON = group.toJSON();
 
@@ -496,8 +587,9 @@ schema.methods.getMemberCount = async function getMemberCount () {
   return await User.count(query).exec();
 };
 
-schema.methods.sendChat = function sendChat (message, user, metaData, client) {
-  let newMessage = messageDefaults(message, user, client);
+schema.methods.sendChat = function sendChat (options = {}) {
+  const {message, user, metaData, client, info = {}} = options;
+  let newMessage = messageDefaults(message, user, client, info);
   let newChatMessage = new Chat();
   newChatMessage = Object.assign(newChatMessage, newMessage);
   newChatMessage.groupId = this._id;
@@ -653,8 +745,15 @@ schema.methods.startQuest = async function startQuest (user) {
   }, _cleanQuestParty(),
   { multi: true }).exec();
 
-  const newMessage = this.sendChat(`\`Your quest, ${quest.text('en')}, has started.\``, null, {
-    participatingMembers: this.getParticipatingQuestMembers().join(', '),
+  const newMessage = this.sendChat({
+    message: `\`${shared.i18n.t('chatQuestStarted', {questName: quest.text('en')}, 'en')}\``,
+    metaData: {
+      participatingMembers: this.getParticipatingQuestMembers().join(', '),
+    },
+    info: {
+      type: 'quest_start',
+      quest: quest.key,
+    },
   });
   await newMessage.save();
 
@@ -913,18 +1012,42 @@ schema.methods._processBossQuest = async function processBossQuest (options) {
   const promises = [];
 
   group.quest.progress.hp -= progress.up;
-  // TODO Create a party preferred language option so emits like this can be localized. Suggestion: Always display the English version too. Or, if English is not displayed to the players, at least include it in a new field in the chat object that's visible in the database - essential for admins when troubleshooting quests!
-  let playerAttack = `${user.profile.name} attacks ${quest.boss.name('en')} for ${progress.up.toFixed(1)} damage.`;
-  let bossAttack = CRON_SAFE_MODE || CRON_SEMI_SAFE_MODE ? `${quest.boss.name('en')} does not attack, because it respects the fact that there are some bugs\` \`post-maintenance and it doesn't want to hurt anyone unfairly. It will continue its rampage soon!` : `${quest.boss.name('en')} attacks party for ${Math.abs(down).toFixed(1)} damage.`;
-  // TODO Consider putting the safe mode boss attack message in an ENV var
-  const groupMessage = group.sendChat(`\`${playerAttack}\` \`${bossAttack}\``);
-  promises.push(groupMessage.save());
+  if (CRON_SAFE_MODE || CRON_SEMI_SAFE_MODE) {
+    const groupMessage = group.sendChat({
+      message: `\`${shared.i18n.t('chatBossDontAttack', {bossName: quest.boss.name('en')}, 'en')}\``,
+      info: {
+        type: 'boss_dont_attack',
+        user: user.profile.name,
+        quest: group.quest.key,
+        userDamage: progress.up.toFixed(1),
+      },
+    });
+    promises.push(groupMessage.save());
+  } else {
+    const groupMessage = group.sendChat({
+      message: `\`${shared.i18n.t('chatBossDamage', {username: user.profile.name, bossName: quest.boss.name('en'), userDamage: progress.up.toFixed(1), bossDamage: Math.abs(down).toFixed(1)}, user.preferences.language)}\``,
+      info: {
+        type: 'boss_damage',
+        user: user.profile.name,
+        quest: group.quest.key,
+        userDamage: progress.up.toFixed(1),
+        bossDamage: Math.abs(down).toFixed(1),
+      },
+    });
+    promises.push(groupMessage.save());
+  }
 
   // If boss has Rage, increment Rage as well
   if (quest.boss.rage) {
     group.quest.progress.rage += Math.abs(down);
     if (group.quest.progress.rage >= quest.boss.rage.value) {
-      const rageMessage = group.sendChat(quest.boss.rage.effect('en'));
+      const rageMessage = group.sendChat({
+        message: quest.boss.rage.effect('en'),
+        info: {
+          type: 'boss_rage',
+          quest: quest.key,
+        },
+      });
       promises.push(rageMessage.save());
       group.quest.progress.rage = 0;
 
@@ -952,7 +1075,13 @@ schema.methods._processBossQuest = async function processBossQuest (options) {
 
   // Boss slain, finish quest
   if (group.quest.progress.hp <= 0) {
-    const questFinishChat = group.sendChat(`\`You defeated ${quest.boss.name('en')}! Questing party members receive the rewards of victory.\``);
+    const questFinishChat = group.sendChat({
+      message: `\`${shared.i18n.t('chatBossDefeated', {bossName: quest.boss.name('en')}, 'en')}\``,
+      info: {
+        type: 'boss_defeated',
+        quest: quest.key,
+      },
+    });
     promises.push(questFinishChat.save());
 
     // Participants: Grant rewards & achievements, finish quest
@@ -1005,7 +1134,15 @@ schema.methods._processCollectionQuest = async function processCollectionQuest (
   }, []);
 
   foundText = foundText.join(', ');
-  const foundChat = group.sendChat(`\`${user.profile.name} found ${foundText}.\``);
+  const foundChat = group.sendChat({
+    message: `\`${shared.i18n.t('chatFindItems', {username: user.profile.name, items: foundText}, 'en')}\``,
+    info: {
+      type: 'user_found_items',
+      user: user.profile.name,
+      quest: quest.key,
+      items: itemsFound,
+    },
+  });
   group.markModified('quest.progress.collect');
 
   // Still needs completing
@@ -1018,7 +1155,12 @@ schema.methods._processCollectionQuest = async function processCollectionQuest (
   }
 
   await group.finishQuest(quest);
-  const allItemsFoundChat = group.sendChat('`All items found! Party has received their rewards.`');
+  const allItemsFoundChat = group.sendChat({
+    message: `\`${shared.i18n.t('chatItemQuestFinish', 'en')}\``,
+    info: {
+      type: 'all_items_found',
+    },
+  });
 
   const promises = [group.save(), foundChat.save(), allItemsFoundChat.save()];
 
@@ -1082,7 +1224,13 @@ schema.statics.tavernBoss = async function tavernBoss (user, progress) {
   const chatPromises = [];
 
   if (tavern.quest.progress.hp <= 0) {
-    const completeChat = tavern.sendChat(quest.completionChat('en'));
+    const completeChat = tavern.sendChat({
+      message: quest.completionChat('en'),
+      info: {
+        type: 'tavern_quest_completed',
+        quest: quest.key,
+      },
+    });
     chatPromises.push(completeChat.save());
     await tavern.finishQuest(quest);
     _.assign(tavernQuest, {extra: null});
@@ -1111,11 +1259,24 @@ schema.statics.tavernBoss = async function tavernBoss (user, progress) {
       }
 
       if (!scene) {
-        const tiredChat = tavern.sendChat(`\`${quest.boss.name('en')} tries to unleash ${quest.boss.rage.title('en')} but is too tired.\``);
+        const tiredChat = tavern.sendChat({
+          message: `\`${shared.i18n.t('tavernBossTired', {rageName: quest.boss.rage.title('en'), bossName: quest.boss.name('en')}, 'en')}\``,
+          info: {
+            type: 'tavern_boss_rage_tired',
+            quest: quest.key,
+          },
+        });
         chatPromises.push(tiredChat.save());
         tavern.quest.progress.rage = 0; // quest.boss.rage.value;
       } else {
-        const rageChat = tavern.sendChat(quest.boss.rage[scene]('en'));
+        const rageChat = tavern.sendChat({
+          message: quest.boss.rage[scene]('en'),
+          info: {
+            type: 'tavern_boss_rage',
+            quest: quest.key,
+            scene,
+          },
+        });
         chatPromises.push(rageChat.save());
         tavern.quest.extra.worldDmg[scene] = true;
         tavern.markModified('quest.extra.worldDmg');
@@ -1127,7 +1288,13 @@ schema.statics.tavernBoss = async function tavernBoss (user, progress) {
     }
 
     if (quest.boss.desperation && tavern.quest.progress.hp < quest.boss.desperation.threshold && !tavern.quest.extra.desperate) {
-      const progressChat = tavern.sendChat(quest.boss.desperation.text('en'));
+      const progressChat = tavern.sendChat({
+        message: quest.boss.desperation.text('en'),
+        info: {
+          type: 'tavern_boss_desperation',
+          quest: quest.key,
+        },
+      });
       chatPromises.push(progressChat.save());
       tavern.quest.extra.desperate = true;
       tavern.quest.extra.def = quest.boss.desperation.def;
